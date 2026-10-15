@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>いえをまもれ！</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0e192b;font-family:system-ui,"Noto Sans JP",sans-serif;color:#fff}#app{max-width:720px;margin:0 auto;padding:10px}h2{margin:0 0 7px;font-size:19px}.hud{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}.stat{background:#22364a;border-radius:10px;padding:6px 10px;font-weight:800;font-size:13px}#board{width:100%;height:auto;aspect-ratio:4/3;border:3px solid #a8d174;border-radius:12px;background:#438b54;display:block;touch-action:none;user-select:none;cursor:crosshair}.controls{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}button{appearance:none;border:2px solid #435b70;color:#fff;background:#26384d;border-radius:11px;font-size:14px;font-weight:800;min-height:44px;min-width:65px;padding:7px 10px;touch-action:manipulation;cursor:pointer}button.sel{background:#ffc347;color:#1d2530;border-color:#ffe09f}button.primary{background:#12a77d;border-color:#5addba;color:#fff}button.danger{background:#9c3f4b;border-color:#d86b7c}button:active{transform:scale(.96)}button:disabled{opacity:.45}#msg{font-size:14px;min-height:47px;background:#26384d;border-radius:9px;padding:9px;margin-top:8px;line-height:1.35;font-weight:650}#shop{display:none;background:#24334b;padding:8px;margin-top:8px;border-radius:10px}#shop.show{display:block}.shopline{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.split{display:flex;align-items:center;justify-content:space-between;gap:7px;flex-wrap:wrap;margin-top:8px}.pad{display:grid;grid-template-columns:repeat(3,54px);grid-template-rows:repeat(2,45px);gap:4px;touch-action:none}.pad button{min-width:54px;min-height:45px;font-size:23px;padding:2px}.hint{font-size:12px;color:#b3cbd9;margin:6px 0 0}.pad .up{grid-column:2}.pad .left{grid-column:1;grid-row:2}.pad .down{grid-column:2;grid-row:2}.pad .right{grid-column:3;grid-row:2}
+</style></head>
+<body><main id="app">
+<h2>🏠 いえをまもれ！ 30びょうサバイバル</h2>
+<div class="hud"><span class="stat" id="hp">🏠 HP 100</span><span class="stat" id="clock">⏳ 30びょう</span><span class="stat" id="star">⭐ 0</span><span class="stat" id="enemyStat">👾 0 / 100</span></div>
+<canvas id="board" width="480" height="360" aria-label="ゲームのマップ。タップでブロックを置ける"></canvas>
+<div class="controls" id="tools">
+<button data-mode="wall" class="sel">🧱 かべ <span id="walls">156</span></button>
+<button data-mode="strong">🟦 つよかべ <span id="strongs">10</span></button>
+<button data-mode="turret">💣 ほうだい <span id="turrets">3</span></button>
+<button data-mode="move">🚶 いどう</button>
+<button data-mode="erase">🧽 けす</button>
+</div>
+<div class="split"><label style="font-weight:750">👾 てきのかず <select id="count" style="font-size:16px;background:#fff;color:#111;border-radius:7px;padding:6px"><option value="1">1</option><option value="10">10</option><option value="100" selected>100</option><option value="1000">1000</option></select></label><div class="controls" style="margin:0"><button id="start" class="primary">▶ スタート！</button><button id="reset" class="danger">↻ はじめから</button></div></div>
+<div id="msg" role="status" aria-live="polite">🧱 「かべ」をえらんでマップをタップ！ブロックが置けるで。じゅんびができたら「スタート！」</div>
+<div class="split"><div><button id="attack" class="primary" style="min-height:63px">⚔️ こうげき！</button><button id="shopBtn">⭐ ショップ</button></div><div class="pad"><button class="up" data-dir="0,-1">▲</button><button class="left" data-dir="-1,0">◀</button><button class="down" data-dir="0,1">▼</button><button class="right" data-dir="1,0">▶</button></div></div>
+<div id="shop"><b>⭐ スターでかいもの（ボタンをおしてかう）</b><div class="shopline"><button data-buy="wall">🧱 +20こ ⭐40</button><button data-buy="strong">🟦 +5こ ⭐60</button><button data-buy="turret">💣 +1こ ⭐90</button><button data-buy="heal">❤️ +30 ⭐50</button></div></div>
+<div class="hint">マップをなぞると、かべをつづけて置けるで。いどうは矢印を長おし、または「いどう」をえらんでマップをタップ。30びょう いえをまもればクリア！</div>
+</main>
+<script>
+(()=>{'use strict';
+const cv=document.getElementById('board'),ctx=cv.getContext('2d');
+const $=id=>document.getElementById(id), W=16,H=12,S=30;
+let map=[],enemies=[],sparks=[],player,home,hp,stars,kills,spawned,total,stock,mode,running,over,elapsed,spawnClock,last,shotTime,attackUntil,frame;
+const choices=[...document.querySelectorAll('[data-mode]')];
+function message(s){$('msg').textContent=s}
+function reset(){if(frame)cancelAnimationFrame(frame);map=Array.from({length:H},()=>Array(W).fill(null));enemies=[];sparks=[];player={x:8,y:8,tx:8,ty:8};home={x:7,y:5};hp=100;stars=0;kills=0;spawned=0;total=Number($('count').value);stock={wall:156,strong:10,turret:3};mode='wall';running=false;over=false;elapsed=0;spawnClock=0;last=0;shotTime=0;attackUntil=0;$('start').disabled=false;$('start').textContent='▶ スタート！';$('count').disabled=false;choices.forEach(b=>b.classList.toggle('sel',b.dataset.mode==='wall'));message('🧱 マップをタップしたらかべが置けるで！じゅんびができたら「スタート！」');hud();render()}
+function isHome(x,y){return x>=7&&x<=8&&y>=5&&y<=6}
+function free(x,y){return x>=0&&x<W&&y>=0&&y<H&&!isHome(x,y)&&!map[y][x]}
+function paint(x,y){if(x<0||y<0||x>=W||y>=H)return;
+ if(mode==='move'){player.tx=x+.5;player.ty=y+.5;message('🚶 マップでえらんだところへ いどうするで！');return}
+ if(mode==='erase'){if(map[y][x]){let t=map[y][x].type;stock[t]++;map[y][x]=null;message('🧽 けして ざいりょうを もどしたで！')}render();hud();return}
+ if(isHome(x,y)||Math.hypot(player.x-(x+.5),player.y-(y+.5))<.5)return;
+ if(!free(x,y))return;
+ if(stock[mode]<=0){message('ざいりょうがないで！⭐ショップでかえるよ');return}
+ const hpMax={wall:14,strong:70,turret:23}[mode];map[y][x]={type:mode,hp:hpMax,max:hpMax,cd:0};stock[mode]--;hud();render();}
+function move(dx,dy){const nx=Math.floor(player.x)+dx,ny=Math.floor(player.y)+dy;if(free(nx,ny)){player.x=nx+.5;player.y=ny+.5;player.tx=player.x;player.ty=player.y;render()}else{player.tx=player.x;player.ty=player.y}}
+function spawn(){let side=Math.floor(Math.random()*4),x,y;if(side===0){x=Math.random()*(W-1);y=0}else if(side===1){x=W-1;y=Math.random()*(H-1)}else if(side===2){x=Math.random()*(W-1);y=H-1}else{x=0;y=Math.random()*(H-1)}let elite=Math.random()<.15;enemies.push({x:x+.5,y:y+.5,hp:elite?11:7,max:elite?11:7,speed:(elite?.46:.56)+Math.random()*.15,elite})}
+function kill(i){const e=enemies[i];sparks.push({x:e.x,y:e.y,t:.45,txt:'+⭐5'});enemies.splice(i,1);stars+=5;kills++;}
+function attack(){if(!running){message('まず「スタート！」をおしてな！');return}if(performance.now()<attackUntil)return;attackUntil=performance.now()+440;let hits=0;for(let i=enemies.length-1;i>=0;i--){let e=enemies[i];if(Math.hypot(e.x-player.x,e.y-player.y)<2.4){e.hp-=4;hits++;if(e.hp<=0)kill(i)}}message(hits?'⚔️ '+hits+'たいに こうげきしたで！':'⚔️ こうげき！てきのちかくで おしてな！');render()}
+function finish(win){running=false;over=true;$('start').disabled=true;$('start').textContent=win?'🏆 クリア！':'💥 まけた';if(win){stars+=100;message('🏆 30びょう いえをまもった！クリア！ ボーナス⭐100！')}else message('💥 いえがこわれた！「はじめから」で リベンジ！');hud();render()}
+function tick(ts){if(!running)return;let dt=last?Math.min(.05,(ts-last)/1000):0;last=ts;elapsed+=dt;
+ const shouldSpawn=Math.min(total,Math.floor(elapsed/30*total));let n=0;while(spawned<shouldSpawn&&n<100){spawn();spawned++;n++}
+ // Player automatically walks toward tapped destination.
+ const pdx=player.tx-player.x,pdy=player.ty-player.y,pdist=Math.hypot(pdx,pdy);if(pdist>.05){let nx=player.x+pdx/pdist*Math.min(dt*4.5,pdist),ny=player.y+pdy/pdist*Math.min(dt*4.5,pdist);if(free(Math.floor(nx),Math.floor(ny))){player.x=nx;player.y=ny}else{player.tx=player.x;player.ty=player.y}}
+ // Turrets fire one controlled shot each 0.9 seconds.
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){const t=map[y][x];if(t&&t.type==='turret'){t.cd-=dt;if(t.cd<=0){let target=null,dist=4.5;for(const e of enemies){let d=Math.hypot(e.x-(x+.5),e.y-(y+.5));if(d<dist){dist=d;target=e}}if(target){target.hp-=2.4;t.cd=.9;sparks.push({x:target.x,y:target.y,t:.12,txt:'✦'})}}}}
+ for(let i=enemies.length-1;i>=0;i--){const e=enemies[i];if(e.hp<=0){kill(i);continue}let dx=8-e.x,dy=6-e.y,d=Math.hypot(dx,dy)||1;if(d<1.08){hp-=dt*(e.elite?7:5);continue}let nx=e.x+dx/d*e.speed*dt,ny=e.y+dy/d*e.speed*dt;let gx=Math.max(0,Math.min(W-1,Math.floor(nx))),gy=Math.max(0,Math.min(H-1,Math.floor(ny)));let block=map[gy][gx];if(block){block.hp-=dt*(e.elite?9:6);if(block.hp<=0){map[gy][gx]=null}else{} }else{e.x=nx;e.y=ny}}
+ for(let i=sparks.length-1;i>=0;i--){sparks[i].t-=dt;if(sparks[i].t<=0)sparks.splice(i,1)}
+ if(hp<=0){hp=0;finish(false);return}if(elapsed>=30){elapsed=30;finish(true);return}hud();render();frame=requestAnimationFrame(tick)}
+function hud(){$('hp').textContent='🏠 HP '+Math.ceil(hp);$('clock').textContent='⏳ '+Math.ceil(30-elapsed)+'びょう';$('star').textContent='⭐ '+stars;$('enemyStat').textContent='👾 '+kills+'たおした / '+total;$('walls').textContent=stock.wall;$('strongs').textContent=stock.strong;$('turrets').textContent=stock.turret}
+function render(){ctx.clearRect(0,0,480,360);ctx.fillStyle='#5b9e65';ctx.fillRect(0,0,480,360);
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){ctx.fillStyle=(x+y)%2?'#65aa6c':'#6fb574';ctx.fillRect(x*S,y*S,S,S);ctx.strokeStyle='#448b53';ctx.lineWidth=.6;ctx.strokeRect(x*S+.3,y*S+.3,S-.6,S-.6)}
+ ctx.fillStyle='#eed298';ctx.fillRect(7*S,5*S,2*S,2*S);ctx.fillStyle='#e8a959';ctx.beginPath();ctx.moveTo(7*S-3,5*S+10);ctx.lineTo(8*S,5*S-12);ctx.lineTo(9*S+3,5*S+10);ctx.closePath();ctx.fill();ctx.fillStyle='#854c29';ctx.fillRect(7*S+14,5*S+17,32,40);ctx.fillStyle='#5bc0fa';ctx.fillRect(7*S+7,5*S+15,12,13);ctx.fillStyle='#fff';ctx.font='12px sans-serif';ctx.fillText('🏠',7*S+21,5*S+29);
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){let b=map[y][x];if(!b)continue;ctx.fillStyle=b.type==='wall'?'#a97748':b.type==='strong'?'#4d98d9':'#4f4e64';ctx.fillRect(x*S+2,y*S+2,S-4,S-4);ctx.strokeStyle=b.type==='strong'?'#a4e8ff':'#403d39';ctx.lineWidth=2;ctx.strokeRect(x*S+3,y*S+3,S-6,S-6);ctx.fillStyle=b.type==='wall'?'#c9a079':b.type==='strong'?'#73d8ff':'#ffd34c';ctx.font='20px sans-serif';ctx.textAlign='center';ctx.fillText(b.type==='wall'?'▥':b.type==='strong'?'◆':'✹',x*S+S/2,y*S+22);ctx.textAlign='left';ctx.fillStyle='#fae5a4';ctx.fillRect(x*S+3,y*S+27,24*Math.max(0,b.hp/b.max),2)}
+ for(const e of enemies){ctx.beginPath();ctx.arc(e.x*S,e.y*S,e.elite?10:8,0,Math.PI*2);ctx.fillStyle=e.elite?'#79259c':'#b13763';ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(e.x*S-5,e.y*S-4,4,4);ctx.fillRect(e.x*S+2,e.y*S-4,4,4);ctx.fillStyle='#f5a1aa';ctx.fillRect(e.x*S-7,e.y*S-12,14*Math.max(0,e.hp/e.max),2)}
+ ctx.beginPath();ctx.arc(player.x*S,player.y*S,11,0,Math.PI*2);ctx.fillStyle='#ffe780';ctx.fill();ctx.strokeStyle='#1f5868';ctx.lineWidth=2.5;ctx.stroke();ctx.fillStyle='#1b4a64';ctx.fillRect(player.x*S-6,player.y*S-3,4,4);ctx.fillRect(player.x*S+2,player.y*S-3,4,4);ctx.font='13px sans-serif';ctx.fillText('🧑',player.x*S-10,player.y*S+7);
+ for(const s of sparks){ctx.fillStyle='#ffeb55';ctx.font='bold 12px sans-serif';ctx.fillText(s.txt,s.x*S-8,s.y*S-15*(1-s.t))}
+ if(over){ctx.fillStyle='rgba(9,18,34,.65)';ctx.fillRect(0,135,480,90);ctx.fillStyle='#fff';ctx.font='bold 32px sans-serif';ctx.textAlign='center';ctx.fillText(hp>0?'🏆 クリア！':'💥 まけた！',240,190);ctx.textAlign='left'}}
+ function coord(e){let r=cv.getBoundingClientRect();return [Math.floor((e.clientX-r.left)*480/r.width/S),Math.floor((e.clientY-r.top)*360/r.height/S)]}
+ let drag=false,dragLast='';cv.addEventListener('pointerdown',e=>{e.preventDefault();drag=true;dragLast='';cv.setPointerCapture?.(e.pointerId);let [x,y]=coord(e);paint(x,y);dragLast=x+','+y});cv.addEventListener('pointermove',e=>{if(!drag||mode==='move')return;e.preventDefault();let [x,y]=coord(e),key=x+','+y;if(key!==dragLast){paint(x,y);dragLast=key}});cv.addEventListener('pointerup',()=>{drag=false});cv.addEventListener('pointercancel',()=>{drag=false});
+ choices.forEach(b=>b.addEventListener('click',()=>{mode=b.dataset.mode;choices.forEach(x=>x.classList.toggle('sel',x===b));message(mode==='move'?'🚶 マップをタップするか、やじるしをおして いどう！':mode==='erase'?'🧽 けしたいブロックをタップ！':b.textContent.trim()+' をえらんだ！マップをタップしておいてな！')}));
+ $('start').addEventListener('click',()=>{if(running||over)return;total=Number($('count').value);running=true;$('count').disabled=true;$('start').disabled=true;$('start').textContent='👾 せんとうちゅう';message('👾 てきがきた！！30びょう いえをまもれ！！');last=0;frame=requestAnimationFrame(tick)});
+ $('reset').addEventListener('click',reset);$('attack').addEventListener('click',attack);
+ $('shopBtn').addEventListener('click',()=>{$('shop').classList.toggle('show');message('⭐ ほしいもののボタンをおすと かえるで！')});
+ document.querySelectorAll('[data-buy]').forEach(b=>b.addEventListener('click',()=>{let what=b.dataset.buy,cost={wall:40,strong:60,turret:90,heal:50}[what];if(stars<cost){message('⭐ スターが '+(cost-stars)+' こ たりへんで！てきをたおすと ふえるよ');return}if(what==='heal'&&hp>=100){message('❤️ いえのHPは まんたんやで！');return}stars-=cost;if(what==='heal'){hp=Math.min(100,hp+30);message('❤️ いえのHPを 30 かいふくした！')}else{stock[what]+={wall:20,strong:5,turret:1}[what];message('🛒 '+b.textContent+' をかったで！')};hud();render()}));
+ let dirInterval=null;document.querySelectorAll('[data-dir]').forEach(b=>{function stop(){clearInterval(dirInterval);dirInterval=null}b.addEventListener('pointerdown',e=>{e.preventDefault();stop();let [dx,dy]=b.dataset.dir.split(',').map(Number);move(dx,dy);dirInterval=setInterval(()=>move(dx,dy),130);b.setPointerCapture?.(e.pointerId)});b.addEventListener('pointerup',stop);b.addEventListener('pointercancel',stop);b.addEventListener('lostpointercapture',stop)});
+ $('count').addEventListener('change',()=>{if(!running&&!over){total=Number($('count').value);hud()}});
+ reset();
+})();
+</script></body></html>
